@@ -14,7 +14,7 @@ module.exports = {
                 //2. Data de Criação
     const userMs = usuario.createdTimestamp;
     const userCreation = Math.floor(userMs / 1000);
-            
+
                 //3. Data de Entrada
     const userOb = await message.guild.members.fetch(usuario);
     const userJoinedTimes = userOb.joinedTimestamp;
@@ -35,13 +35,6 @@ module.exports = {
 > ✨️ Cargo mais alto: ${roleID}`)
       .setColor('Yellow');
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`userinfo_2-${usuario.id}-${message.author.id}`) // inclui autor para segurança
-        .setLabel('Outras Informações')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await message.reply({ embeds: [embed], components: [row] });
+    message.reply({ embeds: [embed] });
   }
 };
