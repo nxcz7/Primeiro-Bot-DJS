@@ -8,5 +8,6 @@ const client = new Client({
 
  require('./src/handlers/commandHandler')(client); // Carrega os Comandos
  require('./src/handlers/eventHandler')(client); // Carrega os Eventos
+ require('./src/events/interactionCreate.js')(client); // Carrega Interações
 
 client.login(process.env.TOKEN);

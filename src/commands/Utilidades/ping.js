@@ -14,7 +14,7 @@ module.exports = {
     const EMBED = new EmbedBuilder()
       .setAuthor({ name: 'Respostas de Dados', iconURL: message.author.displayAvatarURL() })
       .setDescription(`> Latência: \`${ping}\`ms | WebSocket: \`${message.client.ws.ping}\`ms.`)
-      .setColor('#a29900');
+      .setColor('Yellow');
 
     // Edita a mensagem original com o embed
     await sent.edit({ content: null, embeds: [EMBED] });

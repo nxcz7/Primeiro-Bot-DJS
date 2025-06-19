@@ -6,32 +6,78 @@ module.exports = {
   aliases: ['up'],
   description: 'Recarrega comandos dinamicamente',
   async execute(message, args, client) {
-    const owners = client.owners.map(o => o.id);
+    const owners = client.owners?.map(o => o.id) || [];
     if (!owners.includes(message.author.id)) {
       return message.reply('❌ Você não tem permissão para usar este comando.');
     }
 
+    const comandosDir = path.join(__dirname, '..'); // vai até src/commands
     const nomeComando = args[0];
-    const comandosDir = path.join(__dirname, '..'); // Sobe para a pasta 'commands'
 
-    // 🔁 Recarrega um comando específico
-    const recarregar = (nome) => {
+    // 🔁 Função para recarregar todos os comandos
+    const recarregarTodos = (dir) => {
+      let total = 0;
+      const files = fs.readdirSync(dir);
+
+      for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isDirectory()) {
+          total += recarregarTodos(fullPath);
+        } else if (file.endsWith('.js')) {
+          try {
+            delete require.cache[require.resolve(fullPath)];
+            const novoComando = require(fullPath);
+
+            if (novoComando.name) {
+              client.commands.set(novoComando.name, novoComando);
+
+              // Recarrega aliases
+              if (Array.isArray(novoComando.aliases)) {
+                for (const alias of novoComando.aliases) {
+                  client.commands.set(alias, novoComando);
+                }
+              }
+
+              total++;
+            }
+          } catch (err) {
+            console.error(`[❌] Erro ao recarregar ${file}:\n`, err);
+          }
+        }
+      }
+
+      return total;
+    };
+
+    // 🔃 Recarrega comando individual
+    const recarregarUm = (nome) => {
       let encontrado = false;
 
       const buscar = (dir) => {
-        const arquivos = fs.readdirSync(dir);
-        for (const arquivo of arquivos) {
-          const fullPath = path.join(dir, arquivo);
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
           const stat = fs.statSync(fullPath);
 
           if (stat.isDirectory()) {
             buscar(fullPath);
-          } else if (arquivo.endsWith('.js')) {
-            const comando = require(fullPath);
-            if (comando.name === nome) {
+          } else if (file.endsWith('.js')) {
+            const cache = require(fullPath);
+            if (cache.name === nome || (cache.aliases && cache.aliases.includes(nome))) {
               delete require.cache[require.resolve(fullPath)];
-              const novoComando = require(fullPath);
-              client.commands.set(novoComando.name, novoComando);
+              const novo = require(fullPath);
+
+              if (novo.name) {
+                client.commands.set(novo.name, novo);
+                if (Array.isArray(novo.aliases)) {
+                  for (const alias of novo.aliases) {
+                    client.commands.set(alias, novo);
+                  }
+                }
+              }
+
               encontrado = true;
             }
           }
@@ -42,39 +88,12 @@ module.exports = {
       return encontrado;
     };
 
-    // 🔄 Recarregar todos os comandos
     if (!nomeComando) {
-      let total = 0;
-
-      const recarregarTodos = (dir) => {
-        const arquivos = fs.readdirSync(dir);
-        for (const arquivo of arquivos) {
-          const fullPath = path.join(dir, arquivo);
-          const stat = fs.statSync(fullPath);
-
-          if (stat.isDirectory()) {
-            recarregarTodos(fullPath);
-          } else if (arquivo.endsWith('.js')) {
-            try {
-              delete require.cache[require.resolve(fullPath)];
-              const novoComando = require(fullPath);
-              if (novoComando.name) {
-                client.commands.set(novoComando.name, novoComando);
-                total++;
-              }
-            } catch (err) {
-              console.error(`[❌] Erro ao recarregar ${arquivo}:\n`, err);
-            }
-          }
-        }
-      };
-
-      recarregarTodos(comandosDir);
+      const total = recarregarTodos(comandosDir);
       return message.reply(`🔁 Todos os comandos foram recarregados com sucesso!\n📦 Total: \`${total}\` comandos`);
     }
 
-    // 🔃 Recarregar comando individual
-    const sucesso = recarregar(nomeComando);
+    const sucesso = recarregarUm(nomeComando);
 
     if (sucesso) {
       return message.reply(`✅ Comando \`${nomeComando}\` recarregado com sucesso!`);
