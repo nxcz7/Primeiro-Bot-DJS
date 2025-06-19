@@ -52,7 +52,7 @@ module.exports = {
           iconURL: client.user.displayAvatarURL({ dynamic: true })
         })
         .setDescription(
-          `:crown: Meu Developers\n` + `${donosFormatados}\n\n` +
+          `:crown: Meu Developers ${donosFormatados}\n` +
           `> Estou gerenciando cerca de \`\`${servidores}\`\` servidores e \`\`${memberstotal}\`\` usuários no total.\n` +
           `-# Data <t:${tp}:F>`
         )
