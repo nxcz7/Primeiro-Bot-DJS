@@ -14,7 +14,6 @@ module.exports = {
                 //2. Data de Criação
     const userMs = usuario.createdTimestamp;
     const userCreation = Math.floor(userMs / 1000);
-
                 //3. Data de Entrada
     const userOb = await message.guild.members.fetch(usuario);
     const userJoinedTimes = userOb.joinedTimestamp;
@@ -24,17 +23,27 @@ module.exports = {
       .filter(role => role.id !== message.guild.id)
       .sort((a, b) => b.position - a.position);
     const roleID = roles.first() ? `<@&${roles.first().id}>` : 'Nenhum Cargo';
-
+              //5. Verificando se é Bot
+    const UmBot = usuario.bot ? '✅️' : ':x:';
+ //////////////////////////////////////////////////////
     const embed = new EmbedBuilder()
       .setAuthor({ name: 'Informações de Usuário', iconURL: message.author.displayAvatarURL() })
       .setDescription(`
-> 👤 Nome do usuário: \`${nome}\` \`\`( ${id} )\`\`
-> 🗓 Criou a conta: <t:${userCreation}:d> <t:${userCreation}:t> \`\`(\`\` <t:${userCreation}:R> \`\`)\`\`
-> 🙋‍♂️ Entrou no servidor: <t:${userJoin}:d> <t:${userJoin}:t> \`\`(\`\` <t:${userJoin}:R> \`\`)\`\`
+> 👤 Nome: \`${nome}\` \`\`( ${id} )\`\`
+> 🗓 Criou a conta <t:${userCreation}:d> <t:${userCreation}:t> \`\`(\`\` <t:${userCreation}:R> \`\`)\`\`
+> 🙋‍♂️ Entrou no servidor <t:${userJoin}:d> <t:${userJoin}:t> \`\`(\`\` <t:${userJoin}:R> \`\`)\`\`
 
-> ✨️ Cargo mais alto: ${roleID}`)
+> ✨️ Cargo mais alto ${roleID}
+> 🤖É um Bot? ${UmBot}`)
       .setColor('Yellow');
+      
+    const MaisInfo = new ButtonBuilder()
+    .setCustomId(`userinfo-${usuario.id}-${message.author.id}`)
+    .setLabel('Mais Informações')
+    .setStyle(ButtonStyle.Secondary);
 
-    message.reply({ embeds: [embed] });
+    const botao1 = new ActionRowBuilder().addComponents(MaisInfo);
+    
+    message.reply({ embeds: [embed], components: [botao1] });
   }
 };
