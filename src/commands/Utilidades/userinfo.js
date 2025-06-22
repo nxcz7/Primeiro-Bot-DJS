@@ -38,7 +38,7 @@ module.exports = {
       .setColor('Yellow');
       
     const MaisInfo = new ButtonBuilder()
-    .setCustomId(`userinfo-${usuario.id}-${message.author.id}`)
+    .setCustomId(`InteractionUserInfo-${usuario.id}-${message.author.id}`)
     .setLabel('Mais Informações')
     .setStyle(ButtonStyle.Secondary);
 
