@@ -1,28 +1,23 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const Economia = require('../../models/Economia');
+const Servidor = require('../../models/Servidores');
 const partidasAtivas = require('../../utils/gameState');
 
 function parseValor(input, saldoTotal = 0) {
   if (!input) return 0;
-
   const val = input.toLowerCase().trim();
-
   if (val === 'all') return saldoTotal;
   if (val === 'half') return Math.floor(saldoTotal / 2);
-
   const match = val.match(/^([0-9]*\.?[0-9]+)([kmbt])?$/);
   if (!match) return NaN;
-
   let number = parseFloat(match[1]);
   const suffix = match[2];
-
   switch (suffix) {
     case 'k': number *= 1e3; break;
     case 'm': number *= 1e6; break;
     case 'b': number *= 1e9; break;
     case 't': number *= 1e12; break;
   }
-
   return Math.floor(number);
 }
 
@@ -32,21 +27,13 @@ function getCard() {
 }
 
 function calcValor(cards) {
-  let total = 0;
-  let ases = 0;
+  let total = 0, ases = 0;
   for (const c of cards) {
     if (['J', 'Q', 'K'].includes(c)) total += 10;
-    else if (c === 'A') {
-      total += 11;
-      ases++;
-    } else {
-      total += parseInt(c);
-    }
+    else if (c === 'A') { total += 11; ases++; }
+    else total += parseInt(c);
   }
-  while (total > 21 && ases > 0) {
-    total -= 10;
-    ases--;
-  }
+  while (total > 21 && ases > 0) { total -= 10; ases--; }
   return total;
 }
 
@@ -62,48 +49,54 @@ module.exports = {
     const nome = message.author.username;
 
     if (partidasAtivas.has(userid))
-      return message.reply('⚠️ Você já está em uma partida de Blackjack em andamento. Por favor, finalize-a antes de iniciar outra.');
+      return message.reply('⚠️ Você já está em uma partida. Finalize ela primeiro!');
+
+    let prefix = '!';
+    const dados = await Servidor.findOne({ guildId: message.guild.id });
+    if (dados?.prefix) prefix = dados.prefix;
 
     let userData = await Economia.findOne({ userid });
     if (!userData) userData = await Economia.create({ nome, userid, money: 0, banco: 0 });
 
-    if (!args[0]) return message.reply('❌ Informe o valor da aposta! Use por exemplo: `!blackjack 1k` ou `!blackjack all`');
+    const apostaRaw = args[0];
+    const aposta = parseValor(apostaRaw, userData.money);
 
-    const aposta = parseValor(args[0], userData.money);
-    if (isNaN(aposta) || aposta <= 0) return message.reply('❌ Valor inválido para aposta. Use números ou abreviações como 1k, 1.5m, all, half.');
-    if (aposta > userData.money) return message.reply(`❌ Você não tem saldo suficiente. Seu saldo atual é ${userData.money} Bytes.`);
+    if (!apostaRaw)
+      return message.reply(`❌ Use: \`${prefix}blackjack <aposta>\` — Ex: \`${prefix}blackjack 2k\``);
+
+    if (isNaN(aposta) || aposta <= 0 || aposta > userData.money)
+      return message.reply(`❌ Valor de aposta inválido ou saldo insuficiente. Seu saldo: **${userData.money} Bytes**`);
 
     partidasAtivas.add(userid);
 
-    // Cartas iniciais
     let playerCards = [getCard(), getCard()];
     let dealerCards = [getCard(), getCard()];
-
     let playerTotal = calcValor(playerCards);
     let dealerTotal = calcValor(dealerCards);
 
-    // Mostrar dealer com 1 carta oculta
-    const dealerInitialDisplay = `${dealerCards[0]}, ❓`;
+    const dealerDisplay = `${dealerCards[0]}, ❓`;
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('hit').setLabel('🃏 Pedir Carta').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('stand').setLabel('✋ Parar').setStyle(ButtonStyle.Danger)
     );
 
-    let embed = new EmbedBuilder()
-      .setTitle(`♠️ Blackjack - ${nome}`)
-      .setColor('Blue')
+    const embed = new EmbedBuilder()
+      .setTitle(`🎮 Blackjack - ${nome}`)
+      .setColor('#2ecc71')
       .setDescription(
-        `Você apostou **${aposta} Bytes**.\n\n` +
-        `**Suas cartas:** ${formatCards(playerCards)} (Total: ${playerTotal})\n` +
-        `**Cartas do dealer:** ${dealerInitialDisplay}\n\n` +
-        `Clique em **Pedir Carta** para mais cartas ou **Parar** para finalizar sua jogada.`
+        `🎲 Aposta: **${aposta} Bytes**\n\n` +
+        `🧍‍♂️ Suas Cartas: \`${formatCards(playerCards)}\` (Total: **${playerTotal}**)\n` +
+        `🤖 Cartas do Dealer: \`${dealerDisplay}\`\n\n` +
+        `Escolha sua jogada clicando nos botões abaixo:`
       );
 
     const msg = await message.channel.send({ embeds: [embed], components: [row] });
 
-    const filter = i => i.user.id === userid;
-    const collector = msg.createMessageComponentCollector({ filter, time: 120000 });
+    const collector = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userid,
+      time: 60000
+    });
 
     collector.on('collect', async interaction => {
       await interaction.deferUpdate();
@@ -113,91 +106,104 @@ module.exports = {
         playerTotal = calcValor(playerCards);
 
         if (playerTotal > 21) {
-          // Estourou
           userData.money -= aposta;
           await userData.save();
           partidasAtivas.delete(userid);
 
-          embed = new EmbedBuilder()
-            .setTitle(`♠️ Blackjack - ${nome}`)
-            .setColor('Red')
-            .setDescription(
-              `💥 Você estourou com as cartas: ${formatCards(playerCards)} (Total: ${playerTotal})!\n` +
-              `Você perdeu **${aposta} Bytes**.\n\n` +
-              `Seu saldo atual é: **${userData.money} Bytes**.`
-            );
-
-          return msg.edit({ embeds: [embed], components: [] });
+          return msg.edit({
+            embeds: [
+              new EmbedBuilder()
+                .setColor('Red')
+                .setTitle('💥 Você Estourou!')
+                .setDescription(
+                  `🧍‍♂️ Cartas: \`${formatCards(playerCards)}\` (Total: ${playerTotal})\n` +
+                  `Você perdeu **${aposta} Bytes**.\n` +
+                  `Saldo atual: **${userData.money} Bytes**`
+                )
+            ],
+            components: []
+          });
         }
 
-        // Ainda não estourou, atualiza embed com cartas e total
-        embed = new EmbedBuilder()
-          .setTitle(`♠️ Blackjack - ${nome}`)
-          .setColor('Blue')
-          .setDescription(
-            `Você apostou **${aposta} Bytes**.\n\n` +
-            `**Suas cartas:** ${formatCards(playerCards)} (Total: ${playerTotal})\n` +
-            `**Cartas do dealer:** ${dealerInitialDisplay}\n\n` +
-            `Clique em **Pedir Carta** para mais cartas ou **Parar** para finalizar sua jogada.`
-          );
-
-        return msg.edit({ embeds: [embed] });
+        return msg.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle(`🎮 Blackjack - ${nome}`)
+              .setColor('#2ecc71')
+              .setDescription(
+                `🎲 Aposta: **${aposta} Bytes**\n\n` +
+                `🧍‍♂️ Suas Cartas: \`${formatCards(playerCards)}\` (Total: **${playerTotal}**)\n` +
+                `🤖 Cartas do Dealer: \`${dealerDisplay}\`\n\n` +
+                `Escolha sua jogada clicando nos botões abaixo:`
+              )
+          ]
+        });
       }
 
       if (interaction.customId === 'stand') {
-        // Dealer joga seguindo regra: compra até >= 17
         while (dealerTotal < 17) {
           dealerCards.push(getCard());
           dealerTotal = calcValor(dealerCards);
         }
 
-        let resultadoTexto = '';
-        let corEmbed = '';
-        let saldoFinal = userData.money;
+        const blackjack = playerTotal === 21 && playerCards.length === 2;
+        let resultado = '';
+        let cor = 'Yellow';
+        let ganho = 0;
 
-        if (dealerTotal > 21 || playerTotal > dealerTotal) {
-          // Jogador vence
-          saldoFinal += aposta;
-          resultadoTexto = `🎉 Parabéns! Você venceu essa rodada!\nVocê ganhou **${aposta} Bytes**.`;
-          corEmbed = 'Green';
+        if (blackjack) {
+          ganho = Math.floor(aposta * 2.5);
+          userData.money += ganho;
+          resultado = `🃏 BLACKJACK! Você ganhou **${ganho} Bytes** com uma jogada perfeita!`;
+          cor = 'Green';
+          await message.channel.send(`🎉 **INCRÍVEL! ${nome} tirou um BLACKJACK!** 🂡🂱`);
+        } else if (dealerTotal > 21 || playerTotal > dealerTotal) {
+          ganho = aposta;
+          userData.money += ganho;
+          resultado = `✅ Vitória! Você ganhou **${ganho} Bytes**!`;
+          cor = 'Green';
         } else if (playerTotal < dealerTotal) {
-          // Jogador perde
-          saldoFinal -= aposta;
-          resultadoTexto = `💥 Que pena, você perdeu essa rodada.\nVocê perdeu **${aposta} Bytes**.`;
-          corEmbed = 'Red';
+          userData.money -= aposta;
+          resultado = `❌ Você perdeu **${aposta} Bytes**. Mais sorte na próxima!`;
+          cor = 'Red';
         } else {
-          // Empate
-          resultadoTexto = `😐 Empate! Nenhum Bytes ganho ou perdido.`;
-          corEmbed = 'Yellow';
+          const perda = Math.floor(aposta * 0.07);
+          userData.money -= perda;
+          resultado = `🤝 Empate! Você perdeu uma taxa de **7%** da aposta (**${perda} Bytes**)`;
+          cor = 'Orange';
         }
 
-        userData.money = saldoFinal;
         await userData.save();
         partidasAtivas.delete(userid);
 
-        embed = new EmbedBuilder()
-          .setTitle(`♠️ Blackjack - ${nome}`)
-          .setColor(corEmbed)
-          .setDescription(
-            `**Suas cartas:** ${formatCards(playerCards)} (Total: ${playerTotal})\n` +
-            `**Cartas do dealer:** ${formatCards(dealerCards)} (Total: ${dealerTotal})\n\n` +
-            resultadoTexto + `\n\nSeu saldo final é: **${userData.money} Bytes**.`
-          );
-
-        msg.edit({ embeds: [embed], components: [] });
-        collector.stop();
+        return msg.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle(`🏁 Resultado Final`)
+              .setColor(cor)
+              .setDescription(
+                `🧍‍♂️ Suas Cartas: \`${formatCards(playerCards)}\` (Total: **${playerTotal}**)\n` +
+                `🤖 Cartas do Dealer: \`${formatCards(dealerCards)}\` (Total: **${dealerTotal}**)\n\n` +
+                `${resultado}\n💰 Saldo atual: **${userData.money} Bytes**`
+              )
+          ],
+          components: []
+        });
       }
     });
 
     collector.on('end', (_, reason) => {
       if (reason === 'time') {
         partidasAtivas.delete(userid);
-        embed = new EmbedBuilder()
-          .setTitle(`♠️ Blackjack - ${nome}`)
-          .setColor('Grey')
-          .setDescription('⏰ Tempo esgotado. A partida foi cancelada.');
-
-        msg.edit({ embeds: [embed], components: [] });
+        msg.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('Grey')
+              .setTitle('⌛ Tempo Esgotado')
+              .setDescription('A partida foi encerrada por inatividade.')
+          ],
+          components: []
+        });
       }
     });
   }
